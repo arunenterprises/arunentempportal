@@ -1593,8 +1593,10 @@ async def startup():
         await set_password(db, res.inserted_id, pwd)
     elif existing.get("role") != "superadmin":
         await db.users.update_one({"_id": existing["_id"]}, {"$set": {"role": "superadmin"}})
-    if existing is not None and existing.get("name") in (None, "", "Admin", "Super Admin") and os.environ.get("ADMIN_NAME"):
-        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"name": os.environ["ADMIN_NAME"]}})
+    sa_fields = {"role": "superadmin", "designation": "SuperAdmin"}
+    if os.environ.get("ADMIN_NAME"):
+        sa_fields["name"] = os.environ["ADMIN_NAME"]
+    await db.users.update_one({"email": email}, {"$set": sa_fields})
     if existing is None:
         pass
     elif (os.environ.get("ADMIN_FORCE_RESET") == "true" or not existing.get("password_set_in_app")) and not await check_password(db, existing["_id"], pwd):

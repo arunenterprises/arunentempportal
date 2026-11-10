@@ -112,6 +112,10 @@ User choices: separate new portal; admin creates employee accounts (login with e
 - Migration PDF regenerated: 5 pages, larger and darker text (body 11.5pt, code Courier-Bold 10pt black on grey), domain emp.arunenterprisespryg.in, auth_credentials note.
 - Testing agent iteration_13: backend 11/12, frontend 100%. Fixed after the test: credentials cleanup on delete, and lockout cleared on reset (only checked by restart + screenshot, not retested).
 
+## Implemented (2026-11-10, iteration 21)
+- SuperAdmin record in DB now always stores name (from ADMIN_NAME), role "superadmin" and designation "SuperAdmin" at every startup (server.py startup seed). AppShell hides designation line when it equals the role badge. Verified via DB query, login API and screenshot.
+
+
 ## Backlog
 - P1: Leave balance/quotas per type; mobile card layout for attendance table; set company name (COMPANY_NAME env, currently placeholder)
 - P1: Attendance monthly report export (CSV/Excel)

@@ -103,7 +103,7 @@ User choices: separate new portal; admin creates employee accounts (login with e
 ## Implemented (2026-10-18, iteration 19)
 - SuperAdmin + staff roles: existing ADMIN_EMAIL user migrated to role superadmin; login alias SuperAdmin/Superadmin/SUPRADMIN (any case). Roles admin/hr/manager created only by SuperAdmin at Admin > Users (/admin/users): name, email, mobile, password + confirm, role, per-module View/Edit/Approve (approve = requests only). Backend admin_user maps path->module, method->action (GET view, PATCH requests approve, else edit); /admin/users is superadmin-only. Frontend: role badge in shell, nav/routes filtered by can(), edit/approve buttons and detail tabs gated. Lockout key is now canonical per user. Payslip PDF needs payslips.view for staff.
 - Employees sync bar renamed "Arun Enterprises Main ERP Link" (links to https://erp.arunenterprisespryg.in). Old vendor API (arunenterprises.online) no longer answers (SSL handshake failure); the ERP now runs at https://erp.arunenterprisespryg.in/api with the same login and data. VENDOR_API_URL must be updated (requested via the secrets card). The sync error message is now friendly.
-- Hostinger VPS migration guide PDF: /docs/hostinger-vps-migration-guide.pdf (generator /app/scripts/make_vps_pdf.py).
+- Hostinger VPS migration guide PDF: /docs/hostinger-vps-migration-guide.pdf (generator /app/scripts/make_vps_pdf.py). Now includes Step 5A (ERP link -> API: add /api, VENDOR_API_URL, curl check, Sync now) and Step 5B (SuperAdmin login + users); the systemd part is now Step 5C.
 - Testing agent iteration_12: backend 10/10. Fixed after the test: lockout bypass, dashboard 403 overlay, missing permission gating. Gating fixes re-checked only by compile, not by a retest.
 
 ## Backlog

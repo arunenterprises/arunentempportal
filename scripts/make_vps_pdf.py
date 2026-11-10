@@ -101,7 +101,35 @@ story.append(Table([[Paragraph(f"<font face='Courier' size=7.5>{a}</font>", SM) 
                    style=[("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 story.append(Spacer(1, 4))
 note("Integration proxy waali key (INTEGRATION_PROXY_URL) Emergent ki internal hai; VPS par uski zaroorat nahi.")
-p("Backend ko hamesha chalane ke liye systemd service:")
+
+h("Step 5A - ERP link se API kaise banayein (VENDOR_API_URL)")
+p("Aapke paas sirf ERP ka website link hota hai. API ka pata usi link ke aakhir mein <b>/api</b> jodne se banta hai:")
+story.append(Table([["Aapka ERP link", "https://erp.arunenterprisespryg.in/"],
+                    ["VENDOR_API_URL (API)", "https://erp.arunenterprisespryg.in/api"]], colWidths=[50 * mm, 124 * mm],
+                   style=[("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e2e8f0")),
+                          ("FONTSIZE", (0, 0), (-1, -1), 9), ("FONTNAME", (1, 0), (1, -1), "Courier")]))
+story.append(Spacer(1, 4))
+for t in [
+    "backend/.env mein likhiye: <font face='Courier'>VENDOR_API_URL=\"https://erp.arunenterprisespryg.in/api\"</font> (aakhir ka / ho ya na ho, dono chalega).",
+    "VENDOR_EMAIL / VENDOR_PASSWORD mein ERP ke HR login wale hi email aur password daaliye. ERP ka domain badalne par password wahi rehta hai.",
+    "Kabhi ERP ka domain badle to sirf ye ek line badaliye, phir <b>systemctl restart portal-api</b> chalaiye.",
+]:
+    p("&bull; " + t)
+p("Link sahi hai ya nahi, VPS par check kijiye. Login ka jawab 200 aaye aur usme \"token\" ho to link sahi hai:")
+c("""
+curl -s -o /dev/null -w "%{http_code}\\n" https://erp.arunenterprisespryg.in/api/auth/login \\
+  -H "Content-Type: application/json" -d '{"identifier":"[ERP email]","password":"[ERP password]"}'
+""")
+p("Portal chalu hone ke baad: SuperAdmin se login -> Employees -> <b>Sync now</b>. Upar \"success\" aur employees ki ginti dikhni chahiye. "
+  "\"Cannot connect to ERP\" aaye to VENDOR_API_URL dobara check kijiye.")
+
+h("Step 5B - SuperAdmin login aur users")
+for t in [
+    "Login ID mein <b>SuperAdmin</b> (ya Superadmin / SUPRADMIN) ya ADMIN_EMAIL, aur password ADMIN_PASSWORD wala.",
+    "Naye Admin / HR / Manager users sirf SuperAdmin banata hai: menu <b>Users</b> -> Create user (Name, Email, Mobile, Password, Confirm password, Role, har module par View / Edit / Approve).",
+]:
+    p("&bull; " + t)
+h("Step 5C - Backend ko hamesha chalu rakhiye (systemd service)")
 c("""
 cat > /etc/systemd/system/portal-api.service <<'EOF'
 [Unit]

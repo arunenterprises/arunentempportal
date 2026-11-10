@@ -20,7 +20,6 @@ from bson.errors import InvalidId
 from pymongo.errors import DuplicateKeyError
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Depends, UploadFile, File, Form
 from fastapi.responses import Response
-from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 
@@ -1561,14 +1560,6 @@ async def delete_staff(uid: str, sa: dict = Depends(superadmin_user)):
 
 
 app.include_router(api)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ['CORS_ORIGINS'].split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 @app.on_event("startup")

@@ -112,6 +112,10 @@ User choices: separate new portal; admin creates employee accounts (login with e
 - Migration PDF regenerated: 5 pages, larger and darker text (body 11.5pt, code Courier-Bold 10pt black on grey), domain emp.arunenterprisespryg.in, auth_credentials note.
 - Testing agent iteration_13: backend 11/12, frontend 100%. Fixed after the test: credentials cleanup on delete, and lockout cleared on reset (only checked by restart + screenshot, not retested).
 
+## Implemented (2026-11-10, iteration 22)
+- CORS middleware removed from backend/server.py (frontend and /api share one domain; CORS_ORIGINS env key left in .env but unused).
+- VPS guide PDF (scripts/make_vps_pdf.py) regenerated, 6 pages: portal backend on port 8002 (systemd, nginx proxy_pass, cron, checks); ERP stays on 8001 untouched; separate /opt/portal folder, portal user, arun_portal DB, own nginx file; CORS_ORIGINS removed from env table; troubleshooting for port conflicts and 502.
+
 ## Implemented (2026-11-10, iteration 21)
 - SuperAdmin record in DB now always stores name (from ADMIN_NAME), role "superadmin" and designation "SuperAdmin" at every startup (server.py startup seed). AppShell hides designation line when it equals the role badge. Verified via DB query, login API and screenshot.
 

@@ -21,11 +21,13 @@ def c(t): story.append(Preformatted(t.strip("\n"), CODE, maxLineLength=74, newLi
 def note(t): story.append(Paragraph(t, NOTE))
 
 story.append(Table([[Image("/app/frontend/public/arun-logo.jpg", width=22 * mm, height=15.5 * mm),
-                     Paragraph("<b>ARUN ENTERPRISES Employee Portal</b><br/>Hostinger VPS Migration Guide (Step by Step)", ParagraphStyle("t", parent=P, fontSize=13, leading=17))]],
+                     Paragraph("<b>ARUN ENTERPRISES Employee Portal</b><br/>Hostinger VPS Setup Guide - Folder banane se Finish tak (Portal port 8002)", ParagraphStyle("t", parent=P, fontSize=13, leading=17))]],
                    colWidths=[28 * mm, None], style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 story.append(Spacer(1, 4))
 story.append(Paragraph("Stack: React (frontend) + FastAPI / Python (backend) + MongoDB. Is guide se aap portal ko apne Hostinger VPS par chala sakte hain. "
                        "Jahan <b>[brackets]</b> hain, wahan apni value bhariye.", SM))
+note("<b>Port ka niyam:</b> Aapka main ERP port <b>8001</b> par chal raha hai - use bilkul mat chhuiye. Ye Employee Portal ka backend port <b>8002</b> par chalega. "
+     "Dono ka database, service aur Nginx file alag-alag hai, isliye ek ka kaam doosre ko disturb nahi karega. Portal mein CORS setting nahi hai: website aur /api ek hi domain se chalte hain, isliye zaroorat nahi.")
 
 h("Step 0 - Pehle se taiyaari (checklist)")
 for t in [
@@ -56,7 +58,14 @@ curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
 apt install -y nodejs && npm install -g yarn
 """)
 
+p("Pehle check kijiye ki port 8001 par ERP chal raha hai aur 8002 khaali hai. Pehli line mein ERP dikhna chahiye, doosri line kuch nahi dikhaye:")
+c("""
+ss -ltnp | grep ':8001'
+ss -ltnp | grep ':8002'
+""")
+
 h("Step 3 - MongoDB 7 install")
+note("Agar ERP ke liye MongoDB is VPS par pehle se chal raha hai to ye step chhod dijiye. Portal apna alag database (<b>arun_portal</b>) banayega, ERP ka database nahi chhuega.")
 c("""
 curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
 echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \\
@@ -67,11 +76,14 @@ mongosh --eval "db.runCommand({ ping: 1 })"
 """)
 p("MongoDB sirf server ke andar (127.0.0.1) sunta rahe; bahar ke liye port 27017 mat kholiye.")
 
-h("Step 4 - Code server par laiye")
+h("Step 4 - Server par portal ki directory banaiye aur code laiye")
+p("Portal ke liye alag user aur alag folder <b>/opt/portal</b> banega (ERP ke folder se bilkul alag):")
 c("""
 adduser --disabled-password --gecos "" portal
-mkdir -p /opt/portal && chown portal:portal /opt/portal
+mkdir -p /opt/portal
+chown portal:portal /opt/portal
 sudo -u portal git clone https://github.com/[aapka-user]/[repo].git /opt/portal/app
+ls /opt/portal/app          # backend  frontend  dikhna chahiye
 """)
 
 h("Step 5 - Backend setup (FastAPI)")
@@ -86,7 +98,6 @@ p("<b>backend/.env</b> mein ye keys bhariye (har value double quotes mein):")
 env_rows = [["Key", "Kya daalna hai"],
             ["MONGO_URL", "mongodb://127.0.0.1:27017"],
             ["DB_NAME", "[arun_portal]"],
-            ["CORS_ORIGINS", "https://emp.arunenterprisespryg.in"],
             ["JWT_SECRET", "lamba random text (openssl rand -hex 32)"],
             ["ADMIN_EMAIL / ADMIN_PASSWORD", "SuperAdmin ka email aur password"],
             ["ADMIN_FORCE_RESET", "false"],
@@ -138,14 +149,16 @@ After=network.target mongod.service
 [Service]
 User=portal
 WorkingDirectory=/opt/portal/app/backend
-ExecStart=/opt/portal/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 2
+ExecStart=/opt/portal/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8002 --workers 2
 Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
 systemctl daemon-reload && systemctl enable --now portal-api
-curl -s http://127.0.0.1:8001/api/push/public-key
+systemctl status portal-api --no-pager
+curl -s http://127.0.0.1:8002/api/push/public-key
 """)
+p("Aakhri line ek lamba key text dikhaye to backend port 8002 par chal gaya. ERP abhi bhi 8001 par chal raha hai, check: <b>ss -ltnp | grep ':800'</b>")
 
 h("Step 6 - Purana data import (agar export mila ho)")
 c("""
@@ -174,7 +187,7 @@ server {
     index index.html;
     client_max_body_size 20M;
     location /api/ {
-        proxy_pass http://127.0.0.1:8001;
+        proxy_pass http://127.0.0.1:8002;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $remote_addr;
@@ -184,9 +197,10 @@ server {
     location / { try_files $uri /index.html; }
 }
 EOF
-ln -s /etc/nginx/sites-available/portal /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/portal /etc/nginx/sites-enabled/portal
 nginx -t && systemctl reload nginx
 """)
+p("Ye file sirf <b>emp.arunenterprisespryg.in</b> ke liye hai. ERP ki Nginx file (erp.arunenterprisespryg.in -> 8001) jaisi hai waisi rahegi. 'nginx -t' mein 'successful' aana chahiye.")
 
 h("Step 9 - HTTPS (free SSL)")
 c("certbot --nginx -d emp.arunenterprisespryg.in --redirect -m arunenterprises2023@gmail.com --agree-tos")
@@ -197,9 +211,9 @@ p("Emergent par ye kaam platform karta tha. VPS par crontab mein daaliye (<b>cro
 c("""
 CRON_TZ=Asia/Kolkata
 S=[WEBHOOK_CRON_SECRET]
-0 * * * *    curl -s -X POST -H "Authorization: Bearer $S" http://127.0.0.1:8001/api/cron/vendor-sync
-10 9 * * 1-6  curl -s -X POST -H "Authorization: Bearer $S" http://127.0.0.1:8001/api/cron/punch-reminder-in
-10 18 * * 1-6 curl -s -X POST -H "Authorization: Bearer $S" http://127.0.0.1:8001/api/cron/punch-reminder-out
+0 * * * *    curl -s -X POST -H "Authorization: Bearer $S" http://127.0.0.1:8002/api/cron/vendor-sync
+10 9 * * 1-6  curl -s -X POST -H "Authorization: Bearer $S" http://127.0.0.1:8002/api/cron/punch-reminder-in
+10 18 * * 1-6 curl -s -X POST -H "Authorization: Bearer $S" http://127.0.0.1:8002/api/cron/punch-reminder-out
 30 2 * * *    mongodump --uri mongodb://127.0.0.1:27017 --db [arun_portal] --out /root/backup/$(date +\\%F)
 """)
 
@@ -211,6 +225,7 @@ ufw allow OpenSSH && ufw allow 'Nginx Full' && ufw enable
 h("Step 12 - Check karke chalu kijiye")
 for t in [
     "https://emp.arunenterprisespryg.in kholiye -> SuperAdmin se login kijiye.",
+    "https://erp.arunenterprisespryg.in bhi kholiye -> ERP pehle jaisa chalna chahiye (port 8001).",
     "Employees page par <b>Sync now</b> dabaiye -> ERP ke employees aane chahiye.",
     "Ek employee se mobile par Punch In (camera + location allow) karke dekhiye; ERP attendance mein update dikhna chahiye.",
     "Payslip PDF download, Leave request aur approve check kijiye.",
@@ -230,6 +245,8 @@ cd frontend && sudo -u portal yarn install && sudo -u portal yarn build
 h("Dikkat aaye to")
 for t in [
     "Backend log: <b>journalctl -u portal-api -n 100</b>",
+    "'address already in use' error: port 8002 par koi aur chal raha hai. <b>ss -ltnp | grep 8002</b> se dekhiye. 8001 kabhi mat lijiye, wo ERP ka hai.",
+    "502 Bad Gateway: portal-api band hai. <b>systemctl restart portal-api</b> chalaiye.",
     "Nginx log: <b>tail -n 50 /var/log/nginx/error.log</b>",
     "Login nahi ho raha: backend/.env mein ADMIN_EMAIL / ADMIN_PASSWORD aur JWT_SECRET check kijiye, phir <b>systemctl restart portal-api</b>.",
     "Page khaali / 404 on refresh: Nginx mein 'try_files $uri /index.html' line check kijiye.",
@@ -241,7 +258,7 @@ def footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 7.5)
     canvas.setFillColor(colors.HexColor("#64748b"))
-    canvas.drawString(18 * mm, 10 * mm, "ARUN ENTERPRISES - Hostinger VPS Migration Guide")
+    canvas.drawString(18 * mm, 10 * mm, "ARUN ENTERPRISES - Employee Portal VPS Guide (port 8002)")
     canvas.drawRightString(A4[0] - 18 * mm, 10 * mm, f"Page {doc.page}")
     canvas.restoreState()
 

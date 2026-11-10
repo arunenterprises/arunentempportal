@@ -6,18 +6,18 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Preformatte
 
 OUT = "/app/frontend/public/docs/hostinger-vps-migration-guide.pdf"
 ss = getSampleStyleSheet()
-H1 = ParagraphStyle("H1", parent=ss["Title"], fontSize=20, textColor=colors.HexColor("#0f172a"), spaceAfter=4)
-H2 = ParagraphStyle("H2", parent=ss["Heading2"], fontSize=13, textColor=colors.HexColor("#1d4ed8"), spaceBefore=10, spaceAfter=4)
-P = ParagraphStyle("P", parent=ss["BodyText"], fontSize=9.5, leading=13.5)
-SM = ParagraphStyle("SM", parent=P, fontSize=8.5, textColor=colors.HexColor("#475569"))
-CODE = ParagraphStyle("CODE", fontName="Courier", fontSize=7.8, leading=10, backColor=colors.HexColor("#f1f5f9"),
-                      borderPadding=5, leftIndent=4, rightIndent=4, spaceBefore=3, spaceAfter=6)
-NOTE = ParagraphStyle("NOTE", parent=P, backColor=colors.HexColor("#fef3c7"), borderPadding=6, spaceBefore=4, spaceAfter=8)
+H1 = ParagraphStyle("H1", parent=ss["Title"], fontSize=22, textColor=colors.HexColor("#0f172a"), spaceAfter=4)
+H2 = ParagraphStyle("H2", parent=ss["Heading2"], fontName="Helvetica-Bold", fontSize=15, leading=19, textColor=colors.HexColor("#1e3a8a"), spaceBefore=12, spaceAfter=6)
+P = ParagraphStyle("P", parent=ss["BodyText"], fontName="Helvetica", fontSize=11.5, leading=16, textColor=colors.HexColor("#0b0f19"))
+SM = ParagraphStyle("SM", parent=P, fontSize=10.5, leading=14, textColor=colors.HexColor("#111827"))
+CODE = ParagraphStyle("CODE", fontName="Courier-Bold", fontSize=10, leading=13.5, textColor=colors.HexColor("#000000"), backColor=colors.HexColor("#e5e7eb"),
+                      borderColor=colors.HexColor("#9ca3af"), borderWidth=0.6, borderPadding=7, leftIndent=6, rightIndent=6, spaceBefore=5, spaceAfter=9)
+NOTE = ParagraphStyle("NOTE", parent=P, backColor=colors.HexColor("#fde68a"), borderPadding=7, spaceBefore=5, spaceAfter=9)
 
 story = []
 def h(t): story.append(Paragraph(t, H2))
 def p(t): story.append(Paragraph(t, P))
-def c(t): story.append(Preformatted(t.strip("\n"), CODE, maxLineLength=92, newLineChars="    "))
+def c(t): story.append(Preformatted(t.strip("\n"), CODE, maxLineLength=74, newLineChars="    "))
 def note(t): story.append(Paragraph(t, NOTE))
 
 story.append(Table([[Image("/app/frontend/public/arun-logo.jpg", width=22 * mm, height=15.5 * mm),
@@ -30,7 +30,7 @@ story.append(Paragraph("Stack: React (frontend) + FastAPI / Python (backend) + M
 h("Step 0 - Pehle se taiyaari (checklist)")
 for t in [
     "Hostinger VPS: Ubuntu 22.04 / 24.04, kam se kam 2 vCPU, 4 GB RAM, 50 GB disk (KVM 2 plan ya upar).",
-    "Portal ke liye ek subdomain chuniye, jaise <b>[hr.arunenterprisespryg.in]</b>. Dhyan dein: <b>erp.arunenterprisespryg.in</b> par aapka main ERP chal raha hai, use mat badaliye.",
+    "Portal ka domain: <b>https://emp.arunenterprisespryg.in</b>. Dhyan dein: <b>erp.arunenterprisespryg.in</b> par aapka main ERP chal raha hai, use mat badaliye.",
     "Code: Emergent chat mein <b>'Save to GitHub'</b> se code apne GitHub repo mein bhejiye (ya code download kijiye).",
     "Purana data (employees, attendance, requests, payslips): live database ka export Emergent support se maangiye (mongodump / JSON). Bina export ke naya server khaali database se shuru hoga.",
     "Saari secret values (passwords, keys) ek surakshit jagah likh lijiye. Inki list Step 5 mein hai.",
@@ -39,7 +39,7 @@ for t in [
 
 h("Step 1 - DNS: subdomain ko VPS se jodiye")
 p("Domain provider (Hostinger hPanel -> Domains -> DNS Zone) mein naya record banaiye:")
-story.append(Table([["Type", "Name", "Value", "TTL"], ["A", "[hr]", "[VPS IP address]", "3600"]], colWidths=[20 * mm, 30 * mm, 60 * mm, 20 * mm],
+story.append(Table([["Type", "Name", "Value", "TTL"], ["A", "emp", "[VPS IP address]", "3600"]], colWidths=[20 * mm, 30 * mm, 60 * mm, 20 * mm],
                    style=[("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")),
                           ("FONTSIZE", (0, 0), (-1, -1), 9)]))
 story.append(Spacer(1, 4))
@@ -86,7 +86,7 @@ p("<b>backend/.env</b> mein ye keys bhariye (har value double quotes mein):")
 env_rows = [["Key", "Kya daalna hai"],
             ["MONGO_URL", "mongodb://127.0.0.1:27017"],
             ["DB_NAME", "[arun_portal]"],
-            ["CORS_ORIGINS", "https://[hr.arunenterprisespryg.in]"],
+            ["CORS_ORIGINS", "https://emp.arunenterprisespryg.in"],
             ["JWT_SECRET", "lamba random text (openssl rand -hex 32)"],
             ["ADMIN_EMAIL / ADMIN_PASSWORD", "SuperAdmin ka email aur password"],
             ["ADMIN_FORCE_RESET", "false"],
@@ -97,7 +97,7 @@ env_rows = [["Key", "Kya daalna hai"],
             ["VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT", "punch reminder keys (purani wahi rakhiye)"],
             ["WEBHOOK_CRON_SECRET", "lamba random text"],
             ["COMPANY_NAME / ADDRESS / CONTACT / LOGO", "payslip branding (purani values)"]]
-story.append(Table([[Paragraph(f"<font face='Courier' size=7.5>{a}</font>", SM) if i else Paragraph(f"<b>{a}</b>", SM), Paragraph(b if i else f"<b>{b}</b>", SM)] for i, (a, b) in enumerate(env_rows)], colWidths=[80 * mm, 94 * mm],
+story.append(Table([[Paragraph(f"<font face='Courier-Bold' size=9 color='#000000'>{a}</font>", SM) if i else Paragraph(f"<b>{a}</b>", SM), Paragraph(b if i else f"<b>{b}</b>", SM)] for i, (a, b) in enumerate(env_rows)], colWidths=[80 * mm, 94 * mm],
                    style=[("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")), ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e2e8f0")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
 story.append(Spacer(1, 4))
 note("Integration proxy waali key (INTEGRATION_PROXY_URL) Emergent ki internal hai; VPS par uski zaroorat nahi.")
@@ -154,10 +154,12 @@ mongorestore --uri "mongodb://127.0.0.1:27017" --nsFrom "[purana_db].*" --nsTo "
 systemctl restart portal-api
 """)
 
+p("Login data (passwords) alag collection <b>auth_credentials</b> mein rehta hai; ERP sync ise kabhi nahi chhoota. Restore karte waqt ye collection bhi zaroor aana chahiye, warna sabko password reset karna padega.")
+
 h("Step 7 - Frontend build (React)")
 c("""
 cd /opt/portal/app/frontend
-echo 'REACT_APP_BACKEND_URL="https://[hr.arunenterprisespryg.in]"' | sudo -u portal tee .env
+echo 'REACT_APP_BACKEND_URL="https://emp.arunenterprisespryg.in"' | sudo -u portal tee .env
 sudo -u portal yarn install --frozen-lockfile
 sudo -u portal yarn build          # build/ folder banega
 """)
@@ -167,7 +169,7 @@ c("""
 cat > /etc/nginx/sites-available/portal <<'EOF'
 server {
     listen 80;
-    server_name [hr.arunenterprisespryg.in];
+    server_name emp.arunenterprisespryg.in;
     root /opt/portal/app/frontend/build;
     index index.html;
     client_max_body_size 20M;
@@ -187,7 +189,7 @@ nginx -t && systemctl reload nginx
 """)
 
 h("Step 9 - HTTPS (free SSL)")
-c("certbot --nginx -d [hr.arunenterprisespryg.in] --redirect -m arunenterprises2023@gmail.com --agree-tos")
+c("certbot --nginx -d emp.arunenterprisespryg.in --redirect -m arunenterprises2023@gmail.com --agree-tos")
 p("Camera (selfie), GPS aur notifications sirf HTTPS par chalte hain, isliye ye step zaroori hai.")
 
 h("Step 10 - Automatic kaam (cron): sync aur punch reminders")
@@ -208,7 +210,7 @@ ufw allow OpenSSH && ufw allow 'Nginx Full' && ufw enable
 
 h("Step 12 - Check karke chalu kijiye")
 for t in [
-    "https://[hr.arunenterprisespryg.in] kholiye -> SuperAdmin se login kijiye.",
+    "https://emp.arunenterprisespryg.in kholiye -> SuperAdmin se login kijiye.",
     "Employees page par <b>Sync now</b> dabaiye -> ERP ke employees aane chahiye.",
     "Ek employee se mobile par Punch In (camera + location allow) karke dekhiye; ERP attendance mein update dikhna chahiye.",
     "Payslip PDF download, Leave request aur approve check kijiye.",

@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from payslip_pdf import build_payslip_pdf
 from vendor_sync import run_sync, push_now, push_day
 import calendar
+from credentials import set_password, check_password, migrate_from_users
 from shortcode import make_short_code, short_code_taken, SHORT_RE
 import csv
 import io
@@ -230,7 +231,7 @@ async def login(body: LoginIn, request: Request):
     if locked:
         await log_auth("failed", request, user, ident, detail="Locked: too many failed attempts")
         raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
-    if not user or not verify_password(body.password, user["password_hash"]):
+    if not user or not await check_password(db, user["_id"], body.password):
         await log_auth("failed", request, user, ident, detail="Wrong password" if user else "Unknown user")
         expired = att and att["last"] <= now_utc() - timedelta(minutes=15)
         if expired:
@@ -308,9 +309,10 @@ async def me(user: dict = Depends(current_user)):
 @api.post("/auth/change-password")
 async def change_password(body: ChangePasswordIn, user: dict = Depends(current_user)):
     doc = await db.users.find_one({"_id": oid(user["id"])})
-    if not verify_password(body.current_password, doc["password_hash"]):
+    if not await check_password(db, doc["_id"], body.current_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
-    await db.users.update_one({"_id": doc["_id"]}, {"$set": {"password_hash": hash_password(body.new_password), "must_change_password": False, "password_set_in_app": True}})
+    await set_password(db, doc["_id"], body.new_password)
+    await db.users.update_one({"_id": doc["_id"]}, {"$set": {"must_change_password": False, "password_set_in_app": True}})
     return {"ok": True}
 
 
@@ -366,8 +368,9 @@ async def create_employee(body: EmployeeIn, admin: dict = Depends(admin_user)):
     if not pwd or len(pwd) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
     await check_unique(data["email"], data["employee_id"])
-    data.update({"role": "employee", "password_hash": hash_password(pwd), "created_at": now_utc(), "short_code": await make_short_code(db, data["employee_id"])})
+    data.update({"role": "employee", "created_at": now_utc(), "short_code": await make_short_code(db, data["employee_id"])})
     res = await db.users.insert_one(data)
+    await set_password(db, res.inserted_id, pwd)
     if data["joining_date"]:
         await db.service_records.insert_one({
             "user_id": str(res.inserted_id), "date": data["joining_date"], "type": "joining",
@@ -433,7 +436,7 @@ async def update_employee(emp_id: str, body: EmployeeIn, admin: dict = Depends(a
     if pwd:
         if len(pwd) < 6:
             raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-        data["password_hash"] = hash_password(pwd)
+        await set_password(db, _id, pwd)
     await db.users.update_one({"_id": _id}, {"$set": data})
     return ser(await db.users.find_one({"_id": _id}))
 
@@ -471,7 +474,8 @@ async def get_emp_or_404(emp_id: str) -> dict:
 @api.post("/admin/employees/{emp_id}/reset-password")
 async def reset_employee_password(emp_id: str, body: ResetPasswordIn, admin: dict = Depends(admin_user)):
     doc = await get_emp_or_404(emp_id)
-    await db.users.update_one({"_id": doc["_id"]}, {"$set": {"password_hash": hash_password(body.new_password), "must_change_password": True}})
+    await set_password(db, doc["_id"], body.new_password)
+    await db.users.update_one({"_id": doc["_id"]}, {"$set": {"must_change_password": True}})
     await db.login_attempts.delete_many({"identifier": {"$in": [doc["email"], doc["employee_id"].lower()]}})
     return {"ok": True}
 
@@ -489,7 +493,8 @@ async def credential_slips(body: SlipsIn, admin: dict = Depends(admin_user)):
     for uid in dict.fromkeys(body.user_ids):
         doc = await get_emp_or_404(uid)
         pwd = "".join(secrets.choice(SLIP_CHARS) for _ in range(8))
-        await db.users.update_one({"_id": doc["_id"]}, {"$set": {"password_hash": hash_password(pwd), "must_change_password": True, "slip_issued_at": now_utc()}})
+        await set_password(db, doc["_id"], pwd)
+        await db.users.update_one({"_id": doc["_id"]}, {"$set": {"must_change_password": True, "slip_issued_at": now_utc()}})
         slips.append({"id": uid, "name": doc.get("name"), "employee_id": doc.get("employee_id"), "short_code": doc.get("short_code"), "designation": doc.get("designation"),
                       "department": doc.get("department"), "email": doc.get("email"), "password": pwd})
     return {"slips": slips, "issued_at": now_utc().isoformat()}
@@ -1508,7 +1513,7 @@ async def _validate_staff(body: StaffUserIn, exclude=None, need_password=True) -
             raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
         if body.password != body.confirm_password:
             raise HTTPException(status_code=400, detail="Password and Confirm password do not match")
-        data["password_hash"] = hash_password(body.password)
+        data["_password"] = body.password
     return data
 
 
@@ -1521,8 +1526,10 @@ async def list_staff(sa: dict = Depends(superadmin_user)):
 @api.post("/admin/users")
 async def create_staff(body: StaffUserIn, sa: dict = Depends(superadmin_user)):
     data = await _validate_staff(body)
+    pwd = data.pop("_password")
     data.update({"created_at": now_utc(), "created_by": sa.get("email")})
     res = await db.users.insert_one(data)
+    await set_password(db, res.inserted_id, pwd)
     return _staff_out(await db.users.find_one({"_id": res.inserted_id}))
 
 
@@ -1532,8 +1539,11 @@ async def update_staff(uid: str, body: StaffUserIn, sa: dict = Depends(superadmi
     if not doc:
         raise HTTPException(status_code=404, detail="User not found")
     data = await _validate_staff(body, doc["_id"], need_password=False)
+    new_pwd = data.pop("_password", None)
     await db.users.update_one({"_id": doc["_id"]}, {"$set": data})
-    if not data["active"] or "password_hash" in data:
+    if new_pwd:
+        await set_password(db, doc["_id"], new_pwd)
+    if not data["active"] or new_pwd:
         await db.login_sessions.update_many({"user_id": uid, "logout_at": None}, {"$set": {"logout_at": now_utc()}})
     return _staff_out(await db.users.find_one({"_id": doc["_id"]}))
 
@@ -1572,14 +1582,16 @@ async def startup():
     await db.users.create_index("vendor_id", sparse=True)
     await db.employee_media.create_index("user_id", unique=True)
     await db.sync_logs.create_index([("started_at", -1)])
+    await migrate_from_users(db)
     email, pwd = os.environ["ADMIN_EMAIL"].lower(), os.environ["ADMIN_PASSWORD"]
     existing = await db.users.find_one({"email": email})
     if existing is None:
-        await db.users.insert_one({"email": email, "password_hash": hash_password(pwd), "name": "Super Admin", "role": "superadmin", "active": True, "created_at": now_utc()})
+        res = await db.users.insert_one({"email": email, "name": "Super Admin", "role": "superadmin", "active": True, "created_at": now_utc()})
+        await set_password(db, res.inserted_id, pwd)
     elif existing.get("role") != "superadmin":
         await db.users.update_one({"_id": existing["_id"]}, {"$set": {"role": "superadmin"}})
-    elif (os.environ.get("ADMIN_FORCE_RESET") == "true" or not existing.get("password_set_in_app")) and not verify_password(pwd, existing["password_hash"]):
-        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"password_hash": hash_password(pwd)}})
+    elif (os.environ.get("ADMIN_FORCE_RESET") == "true" or not existing.get("password_set_in_app")) and not await check_password(db, existing["_id"], pwd):
+        await set_password(db, existing["_id"], pwd)
 
 
 @app.on_event("shutdown")

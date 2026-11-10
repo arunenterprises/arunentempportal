@@ -1,6 +1,6 @@
 {
-  "name": "ARUN ENTERPRISES Employee Portal",
-  "short_name": "ARUN HR",
+  "name": "ARUN ENTERPRISES EMP PORTAL",
+  "short_name": "AE EMP PORTAL",
   "description": "Employee attendance, requests, leave and payslips",
   "start_url": "/",
   "scope": "/",

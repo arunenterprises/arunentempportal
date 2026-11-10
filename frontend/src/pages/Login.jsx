@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Field } from "@/components/common";
 import { useAuth } from "@/context/AuthContext";
 import { errMsg } from "@/lib/api";
+import { homePath } from "@/lib/roles";
 
 const FEATURES = [
   [Camera, "Attendance", "Selfie punch"],
@@ -36,7 +37,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (user) return <Navigate to={user.role === "admin" ? "/admin" : "/employee"} replace />;
+  if (user) return <Navigate to={homePath(user)} replace />;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -44,7 +45,7 @@ export default function Login() {
     setBusy(true);
     try {
       const u = await login(identifier, password);
-      navigate(u.role === "admin" ? "/admin" : "/employee");
+      navigate(homePath(u));
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -84,7 +85,7 @@ export default function Login() {
             <h2 className="text-3xl sm:text-4xl font-bold tracking-tight">Sign in to your portal</h2>
             <p className="text-sm text-muted-foreground mt-2">Use your Employee Code / Email provided by HR.</p>
           </div>
-          <Field label="Employee Code / Short Code / Email">
+          <Field label="Employee Code / Short Code / Email / SuperAdmin">
             <Input required value={identifier} onChange={(e) => setIdentifier(e.target.value)} placeholder="AE0005, full employee code or email" className="h-11" data-testid="login-email-input" />
           </Field>
           <Field label="Password">

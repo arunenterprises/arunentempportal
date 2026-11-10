@@ -137,9 +137,52 @@ async def current_user(request: Request) -> dict:
     return out
 
 
-async def admin_user(user: dict = Depends(current_user)) -> dict:
-    if user["role"] != "admin":
+STAFF_ROLES = ("superadmin", "admin", "hr", "manager")
+CREATABLE_ROLES = ("admin", "hr", "manager")
+MODULES = ("employees", "attendance", "requests", "leave", "payslips", "service_book", "logins")
+ACTIONS = ("view", "edit", "approve")
+MODULE_PREFIXES = [
+    ("/api/admin/employees", "employees"), ("/api/admin/credential-slips", "employees"), ("/api/admin/vendor-sync", "employees"),
+    ("/api/admin/attendance", "attendance"), ("/api/admin/settings/employee-sheet", "attendance"),
+    ("/api/admin/requests", "requests"), ("/api/admin/leave-", "leave"),
+    ("/api/admin/payslips", "payslips"), ("/api/admin/service-records", "service_book"), ("/api/admin/appraisals", "service_book"),
+    ("/api/admin/login-activity", "logins"),
+]
+
+
+def has_perm(user: dict, module: str, action: str) -> bool:
+    if user.get("role") == "superadmin":
+        return True
+    return bool(((user.get("permissions") or {}).get(module) or {}).get(action))
+
+
+async def admin_user(request: Request, user: dict = Depends(current_user)) -> dict:
+    if user["role"] not in STAFF_ROLES:
         raise HTTPException(status_code=403, detail="Admin access required")
+    if user["role"] == "superadmin":
+        return user
+    path = request.url.path
+    if path.startswith("/api/admin/users"):
+        raise HTTPException(status_code=403, detail="Only SuperAdmin can manage users")
+    if path.startswith("/api/admin/stats"):
+        return user
+    module = next((m for p, m in MODULE_PREFIXES if path.startswith(p)), None)
+    if module is None:
+        raise HTTPException(status_code=403, detail="Permission required")
+    if request.method == "GET":
+        action = "view"
+    elif module == "requests" and request.method == "PATCH":
+        action = "approve"
+    else:
+        action = "edit"
+    if not has_perm(user, module, action):
+        raise HTTPException(status_code=403, detail=f"You don't have {action} permission for {module.replace('_', ' ')}")
+    return user
+
+
+async def superadmin_user(user: dict = Depends(current_user)) -> dict:
+    if user["role"] != "superadmin":
+        raise HTTPException(status_code=403, detail="Only SuperAdmin can manage users")
     return user
 
 
@@ -177,6 +220,10 @@ class ChangePasswordIn(BaseModel):
 async def login(body: LoginIn, request: Request):
     ident = body.identifier.strip()
     key = ident.lower()
+    if re.sub(r"[^a-z]", "", key) in ("superadmin", "supradmin", "supperadmin"):
+        sa = await db.users.find_one({"role": "superadmin"}, {"email": 1})
+        if sa:
+            ident = sa["email"]
     att = await db.login_attempts.find_one({"identifier": key})
     locked = att and att.get("count", 0) >= 5 and att["last"] > now_utc() - timedelta(minutes=15)
     user = await db.users.find_one({"$or": [{"email": ident.lower()}, {"employee_id": ident.upper()}, {"short_code": ident.upper()}]})
@@ -236,7 +283,7 @@ async def login_sessions(admin: dict = Depends(admin_user)):
 
 @api.get("/admin/login-activity/logs")
 async def login_logs(date: Optional[str] = None, user_id: Optional[str] = None, type: Optional[str] = None, admin: dict = Depends(admin_user)):
-    q = {"role": {"$ne": "admin"}}
+    q = {"role": {"$nin": list(STAFF_ROLES)}}
     if user_id:
         q["user_id"] = user_id
     if type in ("login", "logout", "failed"):
@@ -1224,7 +1271,7 @@ async def admin_payslips(user_id: Optional[str] = None, month: Optional[str] = N
 @api.get("/payslips/{slip_id}/pdf")
 async def payslip_pdf(slip_id: str, user: dict = Depends(current_user)):
     slip = await db.payslips.find_one({"_id": oid(slip_id)})
-    if not slip or (user["role"] != "admin" and slip["user_id"] != user["id"]):
+    if not slip or (user["role"] not in STAFF_ROLES and slip["user_id"] != user["id"]):
         raise HTTPException(status_code=404, detail="Payslip not found")
     if slip["kind"] == "uploaded":
         content = base64.b64decode(slip["pdf_b64"])
@@ -1420,6 +1467,84 @@ async def cron_punch_reminder(kind: str, request: Request):
     return {"accepted": True}
 
 
+class StaffUserIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    email: str = Field(max_length=120)
+    mobile: str = Field(default="", max_length=15)
+    password: Optional[str] = None
+    confirm_password: Optional[str] = None
+    role: str
+    permissions: dict = {}
+    active: bool = True
+
+
+def _clean_perms(p: dict) -> dict:
+    return {m: {a: bool(((p or {}).get(m) or {}).get(a)) for a in ACTIONS} for m in MODULES}
+
+
+def _staff_out(d: dict) -> dict:
+    return {"id": str(d["_id"]), "name": d.get("name"), "email": d.get("email"), "mobile": d.get("mobile", ""), "role": d["role"],
+            "permissions": _clean_perms(d.get("permissions")), "active": d.get("active", True), "created_at": d.get("created_at")}
+
+
+async def _validate_staff(body: StaffUserIn, exclude=None, need_password=True) -> dict:
+    email = body.email.strip().lower()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=400, detail="Valid email is required")
+    if body.mobile and not re.fullmatch(r"\+?\d{10,13}", body.mobile.strip()):
+        raise HTTPException(status_code=400, detail="Mobile number must be 10-13 digits")
+    if body.role not in CREATABLE_ROLES:
+        raise HTTPException(status_code=400, detail="Role must be Admin, HR or Manager")
+    q = {"email": email}
+    if exclude:
+        q["_id"] = {"$ne": exclude}
+    if await db.users.find_one(q, {"_id": 1}):
+        raise HTTPException(status_code=409, detail="This email is already used")
+    data = {"name": body.name.strip(), "email": email, "mobile": body.mobile.strip(), "role": body.role, "permissions": _clean_perms(body.permissions), "active": body.active}
+    if body.password or need_password:
+        if not body.password or len(body.password) < 8:
+            raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+        if body.password != body.confirm_password:
+            raise HTTPException(status_code=400, detail="Password and Confirm password do not match")
+        data["password_hash"] = hash_password(body.password)
+    return data
+
+
+@api.get("/admin/users")
+async def list_staff(sa: dict = Depends(superadmin_user)):
+    docs = await db.users.find({"role": {"$in": list(STAFF_ROLES)}}).sort("created_at", 1).to_list(500)
+    return {"modules": MODULES, "actions": ACTIONS, "users": [_staff_out(d) for d in docs]}
+
+
+@api.post("/admin/users")
+async def create_staff(body: StaffUserIn, sa: dict = Depends(superadmin_user)):
+    data = await _validate_staff(body)
+    data.update({"created_at": now_utc(), "created_by": sa.get("email")})
+    res = await db.users.insert_one(data)
+    return _staff_out(await db.users.find_one({"_id": res.inserted_id}))
+
+
+@api.put("/admin/users/{uid}")
+async def update_staff(uid: str, body: StaffUserIn, sa: dict = Depends(superadmin_user)):
+    doc = await db.users.find_one({"_id": oid(uid), "role": {"$in": list(CREATABLE_ROLES)}})
+    if not doc:
+        raise HTTPException(status_code=404, detail="User not found")
+    data = await _validate_staff(body, doc["_id"], need_password=False)
+    await db.users.update_one({"_id": doc["_id"]}, {"$set": data})
+    if not data["active"] or "password_hash" in data:
+        await db.login_sessions.update_many({"user_id": uid, "logout_at": None}, {"$set": {"logout_at": now_utc()}})
+    return _staff_out(await db.users.find_one({"_id": doc["_id"]}))
+
+
+@api.delete("/admin/users/{uid}")
+async def delete_staff(uid: str, sa: dict = Depends(superadmin_user)):
+    res = await db.users.delete_one({"_id": oid(uid), "role": {"$in": list(CREATABLE_ROLES)}})
+    if not res.deleted_count:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.login_sessions.update_many({"user_id": uid, "logout_at": None}, {"$set": {"logout_at": now_utc()}})
+    return {"ok": True}
+
+
 app.include_router(api)
 
 app.add_middleware(
@@ -1448,7 +1573,9 @@ async def startup():
     email, pwd = os.environ["ADMIN_EMAIL"].lower(), os.environ["ADMIN_PASSWORD"]
     existing = await db.users.find_one({"email": email})
     if existing is None:
-        await db.users.insert_one({"email": email, "password_hash": hash_password(pwd), "name": "Admin", "role": "admin", "active": True, "created_at": now_utc()})
+        await db.users.insert_one({"email": email, "password_hash": hash_password(pwd), "name": "Super Admin", "role": "superadmin", "active": True, "created_at": now_utc()})
+    elif existing.get("role") != "superadmin":
+        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"role": "superadmin"}})
     elif (os.environ.get("ADMIN_FORCE_RESET") == "true" or not existing.get("password_set_in_app")) and not verify_password(pwd, existing["password_hash"]):
         await db.users.update_one({"_id": existing["_id"]}, {"$set": {"password_hash": hash_password(pwd)}})
 

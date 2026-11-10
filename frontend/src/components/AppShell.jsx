@@ -43,10 +43,11 @@ export default function AppShell({ nav: allNav, area: baseArea }) {
             </NavLink>
           ))}
         </nav>
-        <div className="m-3 rounded-xl bg-white/5 border border-white/10 p-3 flex items-center gap-3">
+        <div className="m-3 rounded-xl bg-white/5 border border-white/10 p-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <div className="h-9 w-9 rounded-full bg-slate-700 grid place-items-center text-xs font-bold">{initials(user?.name)}</div>
-          <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold truncate" data-testid="nav-user-name">{user?.name}</div>
+          <div className="min-w-0 flex-1 basis-[calc(100%-3rem)]">
+            <div className="text-sm font-semibold leading-tight" data-testid="nav-user-name">{user?.name}</div>
+            {(user?.designation || !isAdmin) && <div className="text-[11px] text-slate-300 leading-tight mt-0.5" data-testid="nav-user-designation">{user?.designation || "Employee"}{user?.department ? ` · ${user.department}` : ""}</div>}
             {isAdmin && <div className="inline-flex rounded bg-amber-400/90 text-slate-900 px-1.5 py-px text-[10px] font-bold uppercase tracking-wider my-0.5" data-testid="nav-user-role">{roleLabel}</div>}
             <div className="text-xs text-slate-400 truncate">{user?.short_code ? `${user.short_code} · ` : ""}{user?.employee_id || user?.email}</div>
           </div>

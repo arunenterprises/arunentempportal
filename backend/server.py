@@ -446,7 +446,7 @@ async def delete_employee(emp_id: str, admin: dict = Depends(admin_user)):
     res = await db.users.delete_one({"_id": oid(emp_id), "role": "employee"})
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail="Employee not found")
-    for col in (db.service_records, db.attendance, db.requests, db.payslips, db.employee_media, db.leave_balances, db.leave_adjustments, db.appraisals, db.login_sessions, db.login_logs, db.attendance_overrides, db.push_subscriptions):
+    for col in (db.service_records, db.attendance, db.requests, db.payslips, db.employee_media, db.leave_balances, db.leave_adjustments, db.appraisals, db.login_sessions, db.login_logs, db.attendance_overrides, db.push_subscriptions, db.auth_credentials):
         await col.delete_many({"user_id": emp_id})
     return {"ok": True}
 
@@ -476,7 +476,7 @@ async def reset_employee_password(emp_id: str, body: ResetPasswordIn, admin: dic
     doc = await get_emp_or_404(emp_id)
     await set_password(db, doc["_id"], body.new_password)
     await db.users.update_one({"_id": doc["_id"]}, {"$set": {"must_change_password": True}})
-    await db.login_attempts.delete_many({"identifier": {"$in": [doc["email"], doc["employee_id"].lower()]}})
+    await db.login_attempts.delete_many({"identifier": {"$in": [doc["email"], doc["employee_id"].lower(), f"user:{doc['_id']}"]}})
     return {"ok": True}
 
 
@@ -494,6 +494,7 @@ async def credential_slips(body: SlipsIn, admin: dict = Depends(admin_user)):
         doc = await get_emp_or_404(uid)
         pwd = "".join(secrets.choice(SLIP_CHARS) for _ in range(8))
         await set_password(db, doc["_id"], pwd)
+        await db.login_attempts.delete_many({"identifier": f"user:{doc['_id']}"})
         await db.users.update_one({"_id": doc["_id"]}, {"$set": {"must_change_password": True, "slip_issued_at": now_utc()}})
         slips.append({"id": uid, "name": doc.get("name"), "employee_id": doc.get("employee_id"), "short_code": doc.get("short_code"), "designation": doc.get("designation"),
                       "department": doc.get("department"), "email": doc.get("email"), "password": pwd})
@@ -1551,6 +1552,8 @@ async def update_staff(uid: str, body: StaffUserIn, sa: dict = Depends(superadmi
 @api.delete("/admin/users/{uid}")
 async def delete_staff(uid: str, sa: dict = Depends(superadmin_user)):
     res = await db.users.delete_one({"_id": oid(uid), "role": {"$in": list(CREATABLE_ROLES)}})
+    if res.deleted_count:
+        await db.auth_credentials.delete_one({"user_id": uid})
     if not res.deleted_count:
         raise HTTPException(status_code=404, detail="User not found")
     await db.login_sessions.update_many({"user_id": uid, "logout_at": None}, {"$set": {"logout_at": now_utc()}})
@@ -1586,10 +1589,14 @@ async def startup():
     email, pwd = os.environ["ADMIN_EMAIL"].lower(), os.environ["ADMIN_PASSWORD"]
     existing = await db.users.find_one({"email": email})
     if existing is None:
-        res = await db.users.insert_one({"email": email, "name": "Super Admin", "role": "superadmin", "active": True, "created_at": now_utc()})
+        res = await db.users.insert_one({"email": email, "name": os.environ.get("ADMIN_NAME") or "Super Admin", "role": "superadmin", "active": True, "created_at": now_utc()})
         await set_password(db, res.inserted_id, pwd)
     elif existing.get("role") != "superadmin":
         await db.users.update_one({"_id": existing["_id"]}, {"$set": {"role": "superadmin"}})
+    if existing is not None and existing.get("name") in (None, "", "Admin", "Super Admin") and os.environ.get("ADMIN_NAME"):
+        await db.users.update_one({"_id": existing["_id"]}, {"$set": {"name": os.environ["ADMIN_NAME"]}})
+    if existing is None:
+        pass
     elif (os.environ.get("ADMIN_FORCE_RESET") == "true" or not existing.get("password_set_in_app")) and not await check_password(db, existing["_id"], pwd):
         await set_password(db, existing["_id"], pwd)
 

@@ -1,0 +1,37 @@
+{
+  "summary": "Tested the separate auth_credentials store, branding and the migration PDF. DB: users has 0 docs with password_hash, auth_credentials has exactly one doc per user (10 of 10), the unique index on user_id exists, and every hash starts with $2b$. API: SuperAdmin login works. A TEST employee can log in, a wrong password gives 401, and 5 failures give 429 (also via the email alias, because the canonical user:<id> key is used). No response leaks password_hash. Change-password, admin reset, employee edit with a password, credential slip (TEST employee only) and staff create/update with a password all write to auth_credentials: each new password works and the old one fails. A staff update without a password keeps the existing one. Vendor sync was run once: status success (9 updated, 0 created). A before/after snapshot of auth_credentials (updated_at and hash) showed 0 changes. Manifest name and short_name are correct. The PDF is 5 pages, mentions emp.arunenterprisespryg.in 6 times and hr. 0 times. UI: SuperAdmin login reaches /admin, a wrong password shows 'Invalid ...', and the TEST employee reaches /employee on mobile. Found 2 backend bugs and 1 environment issue (title).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "DELETE /api/admin/employees/{id} and DELETE /api/admin/users/{id}", "issue": "The auth_credentials doc is NOT deleted, so an orphan bcrypt hash is left behind. Reproduced 5 times; the orphans created by testing were removed manually by id. Fix: await db.auth_credentials.delete_one({'user_id': emp_id/uid}) in both delete routes (a delete_credentials helper in credentials.py would be cleaner).", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/admin/employees/{id}/reset-password", "issue": "The reset does not clear the lockout. The login key is now f'user:{_id}', but reset deletes identifiers [email, employee_id.lower()], so a locked-out employee still gets 429 with the new password for 15 minutes. Fix: delete {'identifier': f\"user:{doc['_id']}\"} as well. The credential-slip route also does not clear login_attempts."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "public/index.html title", "issue": "The served HTML still had the old '<title>ARUN ENTERPRISES | Employee Portal' because the CRA dev server does not hot-reload public/index.html. Fixed by restarting the frontend with supervisor. The title is now 'ARUN ENTERPRISES EMP PORTAL'. The production build will pick it up anyway.", "selector": "title", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_auth_credentials_store.py", "/app/test_reports/pytest/pytest_iter13.xml"],
+  "action_items": [
+    "Delete the auth_credentials doc when an employee or staff user is deleted",
+    "In reset-password (and credential-slips), clear login_attempts with identifier f'user:{_id}'"
+  ],
+  "critical_code_review_comments": [
+    "vendor_sync._upsert_one now only $sets profile fields on users; set_password is used only for newly created employees. Credentials are isolated (verified).",
+    "run_sync still receives the unused hash_password argument; it can be removed",
+    "server.hash_password/verify_password are now unused leftovers",
+    "change-password does not end the user's other sessions, while staff password changes do (inconsistent)",
+    "The startup seed resets the admin password from .env whenever password_set_in_app is not set and the password differs (pre-existing behaviour)",
+    "server.py is about 1600 lines; split it into routers"
+  ],
+  "updated_files": ["/app/backend/tests/test_auth_credentials_store.py"],
+  "success_rate": {"backend": "92% (11/12 in the suite; the failing one is the real reset-clears-lockout bug), plus 1 bug found in the delete cleanup DB check", "frontend": "100% after the frontend restart"},
+  "seed_data_creation": "Created TEST_CR<run> employees, TEST_CRUI1 and test_crstaff<run>@example.com staff users; all deleted. Their orphan auth_credentials docs and login_attempts were removed by id. Final state: users 10, auth_credentials 10, 0 orphans, 0 TEST users. No real employee or SuperAdmin credential was changed (snapshot diff empty).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest tests/test_auth_credentials_store.py -n 0. After it runs, the delete routes leave orphan auth_credentials docs until the bug is fixed (test_db_no_password_hash_in_users compares the users count with the creds count). The vendor sync was run once in this iteration; do not repeat it unnecessarily."
+}

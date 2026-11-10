@@ -106,6 +106,12 @@ User choices: separate new portal; admin creates employee accounts (login with e
 - Hostinger VPS migration guide PDF: /docs/hostinger-vps-migration-guide.pdf (generator /app/scripts/make_vps_pdf.py). Now includes Step 5A (ERP link -> API: add /api, VENDOR_API_URL, curl check, Sync now) and Step 5B (SuperAdmin login + users); the systemd part is now Step 5C.
 - Testing agent iteration_12: backend 10/10. Fixed after the test: lockout bypass, dashboard 403 overlay, missing permission gating. Gating fixes re-checked only by compile, not by a retest.
 
+## Implemented (2026-11-10, iteration 20)
+- Login credentials isolated: password hashes moved from users into a separate auth_credentials collection (backend/credentials.py: set_password, check_password, migrate_from_users at startup). ERP sync only touches profile fields. Deleting an employee or staff user removes its credentials; reset password and slips clear the user:{id} lockout key. A separate Mongo database was NOT used because production allows only DB_NAME.
+- Title/manifest: "ARUN ENTERPRISES EMP PORTAL" (short "AE EMP PORTAL"). SuperAdmin name from env ADMIN_NAME="Ashish Srivastava" (set at startup when the name is default). Sidebar shows the full name + designation/department (employees) or the role badge (staff).
+- Migration PDF regenerated: 5 pages, larger and darker text (body 11.5pt, code Courier-Bold 10pt black on grey), domain emp.arunenterprisespryg.in, auth_credentials note.
+- Testing agent iteration_13: backend 11/12, frontend 100%. Fixed after the test: credentials cleanup on delete, and lockout cleared on reset (only checked by restart + screenshot, not retested).
+
 ## Backlog
 - P1: Leave balance/quotas per type; mobile card layout for attendance table; set company name (COMPANY_NAME env, currently placeholder)
 - P1: Attendance monthly report export (CSV/Excel)

@@ -9,8 +9,12 @@ import EmployeeFormDialog from "@/components/EmployeeFormDialog";
 import { AccessSwitch } from "@/components/EmployeeAccess";
 import CredentialSlipsDialog, { SlipsPreview } from "@/components/CredentialSlips";
 import { api, errMsg, fmtDate } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { can } from "@/lib/roles";
 
 const SyncBar = ({ onDone }) => {
+  const { user } = useAuth();
+  const canEdit = can(user, "employees", "edit");
   const [last, setLast] = useState(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => { api.get("/admin/vendor-sync/status").then((r) => setLast(r.data)); }, []);
@@ -27,18 +31,20 @@ const SyncBar = ({ onDone }) => {
   return (
     <Panel className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3" data-testid="vendor-sync-bar">
       <div>
-        <div className="font-semibold">Vendor Portal HR link</div>
+        <div className="font-semibold"><a href="https://erp.arunenterprisespryg.in" target="_blank" rel="noreferrer" className="text-primary hover:underline" data-testid="main-erp-link">Arun Enterprises Main ERP Link</a></div>
         <div className="text-sm text-muted-foreground" data-testid="vendor-sync-status">
-          Employees come from Vendor Portal (Employee Code = primary key); attendance is sent back. Auto-sync every hour.
+          Employees come from Arun Enterprises ERP (HR Management, Employee Code = primary key); attendance is sent back. Auto-sync every hour.
           {last && <> Last sync: {new Date(last.started_at).toLocaleString("en-IN")} · <span className={last.status === "success" ? "text-emerald-600" : "text-rose-600"}>{last.status}</span></>}
         </div>
       </div>
-      <Button variant="outline" onClick={sync} disabled={busy} data-testid="vendor-sync-btn"><RefreshCw size={15} className={`mr-2 ${busy ? "animate-spin" : ""}`} />{busy ? "Syncing…" : "Sync now"}</Button>
+      {canEdit && <Button variant="outline" onClick={sync} disabled={busy} data-testid="vendor-sync-btn"><RefreshCw size={15} className={`mr-2 ${busy ? "animate-spin" : ""}`} />{busy ? "Syncing…" : "Sync now"}</Button>}
     </Panel>
   );
 };
 
 export default function AdminEmployees() {
+  const { user } = useAuth();
+  const canEdit = can(user, "employees", "edit");
   const [rows, setRows] = useState([]);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -64,9 +70,11 @@ export default function AdminEmployees() {
     <div>
       <PageHeader eyebrow="People" title="Employees" desc="Create employee accounts and manage their records."
         action={<div className="flex flex-wrap gap-2">
+          {canEdit && <>
           <Button onClick={genCodes} disabled={!missing} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4" data-testid="generate-short-codes-btn">{missing ? `Create Short ID (${missing})` : "Short IDs ready"}</Button>
           <Button variant="outline" onClick={() => setSlipsOpen(true)} data-testid="credential-slips-btn"><Printer size={16} className="mr-2" />Credential slips</Button>
           <Button onClick={() => setOpen(true)} data-testid="add-employee-btn"><Plus size={16} className="mr-2" />Add employee</Button>
+          </>}
         </div>} />
       <SyncBar onDone={load} />
       <Panel>
@@ -100,7 +108,7 @@ export default function AdminEmployees() {
                     <td className="px-3 py-3" data-label="Designation">{e.designation || "—"}</td>
                     <td className="px-3 py-3 whitespace-nowrap" data-label="Joined">{fmtDate(e.joining_date)}</td>
                     <td className="px-3 py-3" data-label="Status"><Badge2 tone={e.active !== false ? "approved" : "rejected"}>{e.active !== false ? "Active" : "Inactive"}</Badge2></td>
-                    <td className="px-5 sm:px-6 py-3" data-label="Portal Live" onClick={(ev) => ev.stopPropagation()}><AccessSwitch employee={e} onChange={(u) => setRows((rs) => rs.map((x) => (x.id === u.id ? u : x)))} /></td>
+                    <td className="px-5 sm:px-6 py-3" data-label="Portal Live" onClick={(ev) => ev.stopPropagation()}>{canEdit ? <AccessSwitch employee={e} onChange={(u) => setRows((rs) => rs.map((x) => (x.id === u.id ? u : x)))} /> : <span className="text-xs font-semibold">{e.portal_enabled === false ? "Unlive" : "Live"}</span>}</td>
                   </tr>
                 ))}
               </tbody>

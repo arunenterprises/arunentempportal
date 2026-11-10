@@ -1,0 +1,44 @@
+{
+  "summary": "Tested the SuperAdmin/RBAC feature on backend and frontend. Backend: 10/10 pytest cases pass (tests/test_staff_users_roles.py). Covered: SuperAdmin login with SuperAdmin, Superadmin, SUPRADMIN, superadmin and the email (all return role superadmin); /admin/users list, create, edit and delete; validation (password mismatch 400, bad mobile 400, password under 8 chars 400, role superadmin 400, duplicate email 409); SuperAdmin cannot be edited or deleted (404). Per-module enforcement works for created HR/Manager users: GET without view returns 403, POST/DELETE without edit returns 403, PATCH on requests needs requests.approve, /admin/users always returns 403, /admin/stats is allowed, and permitted actions work (list employees, create a TEST employee once edit was granted). A new password ends the user's sessions and the old password stops working. Deactivating ends sessions and login returns 403. Staff logins are excluded from login logs. A TEST employee logs in as role employee and gets 403 on /api/admin/*. Frontend: the SuperAdmin badge, the 'SUPERADMIN CONSOLE' area label and the Users nav are shown. Create-user dialog: mismatch toast, mobile input strips non-digits, approve is disabled except for requests and leave, the view column toggle works, ticking approve auto-ticks view, duplicate toast. Create, edit (role HR to Manager) and delete with confirm all work. A Manager login shows only Dashboard, Employees and Requests on desktop and mobile with the MANAGER badge. Found 1 security issue (lockout bypass) and several UI permission-gating issues.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/login", "issue": "The brute-force lockout can be bypassed for the SuperAdmin account. The lockout key is the raw lowercased identifier (key = ident.lower()), but the alias check strips non-letters, so 'Super.Admin', 'Super_Admin', 'super admin', 'SUPRADMIN', 'supperadmin', the email, etc. each get their own 5-attempt counter. Verified: 'Super.Admin' got 429 after 5 wrong passwords, then 'Super_Admin' with the correct password returned 200. Fix: after resolving the alias or user, use a canonical key (the resolved user's email, or the user _id) for login_attempts.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "GET /api/payslips/{id}/pdf", "issue": "Any staff role (hr or manager) can download any employee's payslip PDF without payslips.view, because the check is only 'role in STAFF_ROLES'. Use has_perm(user, 'payslips', 'view')."},
+      {"endpoint": "leave module approve permission", "issue": "The leave 'approve' permission can be set in the UI but no backend route uses it (only requests PATCH maps to approve). All leave writes need leave.edit. Either drop approve for leave or map an action to it."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AdminDashboard", "issue": "For a staff user without attendance.view, the dashboard calls GET /admin/attendance (and /admin/requests when requests.view is missing) with no .catch. This causes an unhandled 403 promise rejection, which pops the Emergent error overlay and blocks clicks. Reproduced with a Manager who has only employees.view plus requests view/approve. Gate the calls with can(user, ...) and add catch handlers.", "selector": "pages/admin/AdminDashboard.jsx lines 15-19", "priority": "HIGH"},
+      {"component": "Employee detail / EmployeeModules / LeaveBalance", "issue": "The employee detail tabs call /admin/appraisals, /admin/attendance, /admin/payslips and /admin/leave-balance/{id} unconditionally with no catch. A user with only employees.view will hit the same unhandled-403 overlay. Hide the tabs the user has no permission for.", "selector": "components/EmployeeModules.jsx, LeaveBalance.jsx", "priority": "MEDIUM"},
+      {"component": "Action buttons not permission-gated", "issue": "can() is only used for the nav. A Manager without employees.edit still sees Add employee, Create Short ID, Credential slips, Sync now and the Portal Live toggles; the requests approve/reject buttons and the Leave Balance tab are also not gated on leave.view. Clicking them just gives a 403 toast. Hide or disable them with can(user, module, 'edit' or 'approve').", "selector": "AdminEmployees, AdminRequests, AttendanceSheet, PayslipDialogs, etc.", "priority": "MEDIUM"},
+      {"component": "Route guard", "issue": "A non-superadmin opening /admin/users (or any module URL without view) directly gets the page with a 'Create user' button and 403 toasts. Redirect to /admin when the user lacks permission.", "selector": "App.js routes", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "PermMatrix", "issues": ["The column-title toggle 'perm-all-approve' sets approve=true on every module, including the ones whose approve checkbox is disabled (employees, payslips, etc.). The data is inconsistent and the user-row summary reads 'Approve 7'. Limit the toggle to requests and leave."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_staff_users_roles.py", "/app/test_reports/pytest/pytest_iter12.xml"],
+  "action_items": [
+    "Use a canonical lockout key in /auth/login (the resolved user's email or id) so alias or punctuation variants cannot bypass the 5-attempt lockout",
+    "AdminDashboard: only fetch attendance/requests when can(user, module, 'view'), and add .catch to avoid the unhandled 403 overlay",
+    "Gate employee-detail tabs, the Leave Balance tab and the edit/approve buttons with can()",
+    "Add a route-level permission guard (redirect away from /admin/users and modules without view)",
+    "Payslip PDF endpoint: require payslips.view for staff",
+    "perm-all-approve should affect only requests and leave; decide what leave.approve means in the backend"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1586 lines; split it into routers (auth, employees, attendance, requests, payslips, staff users)",
+    "admin_user maps modules by path prefix. This works, but a new /api/admin route outside MODULE_PREFIXES silently returns 403 for all staff, and prefix overlap (e.g. /api/admin/attendance matches /api/admin/attendance-sheet) is implicit. Consider declaring the module per route with Depends(require('module','action'))",
+    "Startup: if ADMIN_FORCE_RESET is set or password_set_in_app is false, the admin password is reset to the .env value on every restart (pre-existing behaviour)"
+  ],
+  "updated_files": ["/app/backend/tests/test_staff_users_roles.py"],
+  "success_rate": {"backend": "100% (10/10) functional; 1 security issue found by manual probe", "frontend": "85% - core flows work; permission gating in UI incomplete"},
+  "seed_data_creation": "Created test_hr_<run>@example.com, test_uihr_614728@example.com staff users and TEST_RL<run> employee; all deleted. Verified only the superadmin remains in /admin/users and no TEST employees remain. Identifier 'super.admin' is locked for 15 min from the lockout probe (harmless).",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run: pytest tests/test_staff_users_roles.py -n 0. SuperAdmin login: identifier 'SuperAdmin' / Arun2023@12 (email arunenterprises2023@gmail.com, display name 'Admin'). The area label is CSS-uppercased, so inner_text gives 'SUPERADMIN CONSOLE'. For a restricted staff user the Emergent overlay '[data-emergent-overlay-host]' appears on the dashboard because of unhandled 403s; remove it via JS to keep testing. To retest the lockout fix: 5 wrong logins with 'Super.Admin', then the correct password with 'Super_Admin' should be 429."
+}

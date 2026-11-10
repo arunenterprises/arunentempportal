@@ -219,14 +219,14 @@ class ChangePasswordIn(BaseModel):
 @api.post("/auth/login")
 async def login(body: LoginIn, request: Request):
     ident = body.identifier.strip()
-    key = ident.lower()
-    if re.sub(r"[^a-z]", "", key) in ("superadmin", "supradmin", "supperadmin"):
+    if re.sub(r"[^a-z]", "", ident.lower()) in ("superadmin", "supradmin", "supperadmin"):
         sa = await db.users.find_one({"role": "superadmin"}, {"email": 1})
         if sa:
             ident = sa["email"]
+    user = await db.users.find_one({"$or": [{"email": ident.lower()}, {"employee_id": ident.upper()}, {"short_code": ident.upper()}]})
+    key = f"user:{user['_id']}" if user else ident.lower()
     att = await db.login_attempts.find_one({"identifier": key})
     locked = att and att.get("count", 0) >= 5 and att["last"] > now_utc() - timedelta(minutes=15)
-    user = await db.users.find_one({"$or": [{"email": ident.lower()}, {"employee_id": ident.upper()}, {"short_code": ident.upper()}]})
     if locked:
         await log_auth("failed", request, user, ident, detail="Locked: too many failed attempts")
         raise HTTPException(status_code=429, detail="Too many failed attempts. Try again in 15 minutes.")
@@ -1273,6 +1273,8 @@ async def payslip_pdf(slip_id: str, user: dict = Depends(current_user)):
     slip = await db.payslips.find_one({"_id": oid(slip_id)})
     if not slip or (user["role"] not in STAFF_ROLES and slip["user_id"] != user["id"]):
         raise HTTPException(status_code=404, detail="Payslip not found")
+    if user["role"] in STAFF_ROLES and not has_perm(user, "payslips", "view"):
+        raise HTTPException(status_code=403, detail="You don't have view permission for payslips")
     if slip["kind"] == "uploaded":
         content = base64.b64decode(slip["pdf_b64"])
     else:

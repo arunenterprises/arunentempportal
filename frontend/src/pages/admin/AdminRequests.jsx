@@ -8,10 +8,15 @@ import { PageHeader, Empty, NativeSelect, Panel } from "@/components/common";
 import RequestItem from "@/components/RequestItem";
 import LeaveBalanceManager from "@/components/LeaveBalanceManager";
 import { api, errMsg } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { can } from "@/lib/roles";
 
 const STATUSES = ["pending", "approved", "rejected", "all"];
 
 export default function AdminRequests() {
+  const { user } = useAuth();
+  const canApprove = can(user, "requests", "approve");
+  const tabs = [["requests", "Requests"], ...(can(user, "leave") ? [["balance", "Leave Balance"]] : [])];
   const [rows, setRows] = useState([]);
   const [status, setStatus] = useState("pending");
   const [type, setType] = useState("");
@@ -38,7 +43,7 @@ export default function AdminRequests() {
     <div>
       <PageHeader eyebrow="Approvals" title="Requests" desc="Review leave, advance, payslip and other employee requests, and manage leave balances." />
       <div className="flex gap-1 rounded-xl border bg-white p-1 mb-5 w-fit" data-testid="requests-tabs">
-        {[["requests", "Requests"], ["balance", "Leave Balance"]].map(([k, l]) => (
+        {tabs.map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} data-testid={`req-tab-${k}`} className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === k ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{l}</button>
         ))}
       </div>
@@ -58,7 +63,7 @@ export default function AdminRequests() {
       <div className="space-y-3">
         {rows.length ? rows.map((r) => (
           <RequestItem key={r.id} r={r} showEmployee>
-            {r.status === "pending" && (
+            {r.status === "pending" && canApprove && (
               <>
                 <Button size="sm" onClick={() => setDecision({ r, status: "approved" })} className="bg-emerald-600 hover:bg-emerald-700" data-testid={`admin-approve-btn-${r.id}`}><Check size={15} className="mr-1" />Approve</Button>
                 <Button size="sm" variant="outline" onClick={() => setDecision({ r, status: "rejected" })} className="text-rose-600 hover:text-rose-700 hover:bg-rose-50" data-testid={`admin-reject-btn-${r.id}`}><X size={15} className="mr-1" />Reject</Button>

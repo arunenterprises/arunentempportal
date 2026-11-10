@@ -20,7 +20,12 @@ const PermMatrix = ({ modules, value, onChange }) => {
     if (a === "view" && !v) { cur.edit = false; cur.approve = false; }
     onChange({ ...value, [m]: cur });
   };
-  const all = (a, v) => onChange(Object.fromEntries(modules.map((m) => [m, a === "view" && !v ? { view: false, edit: false, approve: false } : { ...value[m], [a]: v, view: v || a === "view" ? v || value[m].view : value[m].view }])));
+  const all = (a, v) => onChange(Object.fromEntries(modules.map((m) => {
+    const cur = value[m];
+    if (a === "approve" && m !== "requests") return [m, cur];
+    if (a === "view") return [m, v ? { ...cur, view: true } : { view: false, edit: false, approve: false }];
+    return [m, { ...cur, [a]: v, view: v ? true : cur.view }];
+  })));
   return (
     <div className="rounded-lg border overflow-hidden" data-testid="perm-matrix">
       <div className="grid grid-cols-[1fr_repeat(3,56px)] bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground px-3 py-2">
@@ -31,7 +36,7 @@ const PermMatrix = ({ modules, value, onChange }) => {
           <span>{MODULE_LABEL[m] || m}</span>
           {ACTIONS.map((a) => (
             <span key={a} className="grid place-items-center">
-              <Checkbox checked={!!value[m]?.[a]} onCheckedChange={(v) => set(m, a, !!v)} disabled={a === "approve" && m !== "requests" && m !== "leave"} data-testid={`perm-${m}-${a}`} />
+              <Checkbox checked={!!value[m]?.[a]} onCheckedChange={(v) => set(m, a, !!v)} disabled={a === "approve" && m !== "requests"} data-testid={`perm-${m}-${a}`} />
             </span>
           ))}
         </div>
@@ -72,7 +77,7 @@ const UserForm = ({ modules, initial, onSaved, onClose }) => {
       <div>
         <div className="text-sm font-medium mb-2">Permission · View / Edit / Approve</div>
         <PermMatrix modules={modules} value={f.permissions} onChange={(p) => setF({ ...f, permissions: p })} />
-        <p className="text-[11px] text-muted-foreground mt-1.5">Approve applies to Requests and Leave. Tap a column title to tick/untick all.</p>
+        <p className="text-[11px] text-muted-foreground mt-1.5">Approve applies to Requests (leave, advance, missed punch approvals). Tap a column title to tick/untick all.</p>
       </div>
       <label className="flex items-center gap-2 text-sm"><Switch checked={f.active} onCheckedChange={(v) => setF({ ...f, active: v })} data-testid="user-active-switch" />Active (can log in)</label>
       <Button type="submit" className="w-full" disabled={busy} data-testid="user-save-btn">{busy ? "Saving…" : f.id ? "Save changes" : "Create user"}</Button>

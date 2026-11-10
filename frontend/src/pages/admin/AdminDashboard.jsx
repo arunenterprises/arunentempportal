@@ -5,19 +5,22 @@ import { PageHeader, Panel, StatCard, Empty } from "@/components/common";
 import RequestItem from "@/components/RequestItem";
 import AttendanceTable from "@/components/AttendanceTable";
 import { api, fmtDate } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { can } from "@/lib/roles";
 
 export default function AdminDashboard() {
   const [s, setS] = useState(null);
   const [reqs, setReqs] = useState([]);
   const [att, setAtt] = useState([]);
 
+  const { user } = useAuth();
   useEffect(() => {
     api.get("/admin/stats").then((r) => {
       setS(r.data);
-      api.get("/admin/attendance", { params: { date: r.data.today } }).then((a) => setAtt(a.data));
-    });
-    api.get("/admin/requests", { params: { status: "pending" } }).then((r) => setReqs(r.data.slice(0, 4)));
-  }, []);
+      if (can(user, "attendance")) { api.get("/admin/attendance", { params: { date: r.data.today } }).then((a) => setAtt(a.data)).catch(() => {}); }
+    }).catch(() => {});
+    if (can(user, "requests")) { api.get("/admin/requests", { params: { status: "pending" } }).then((r) => setReqs(r.data.slice(0, 4))).catch(() => {}); }
+  }, [user]);
 
   return (
     <div className="space-y-8">

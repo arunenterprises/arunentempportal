@@ -252,6 +252,9 @@ async def run_sync(db, hash_password, today: date_cls, trigger: str, run_id: str
             result |= pulled
             result |= await push_attendance(db, client, headers, today, remote)
         update = {"status": "success", "result": result}
+    except httpx.ConnectError:
+        logger.exception("Vendor sync failed")
+        update = {"status": "failed", "error": f"Cannot connect to ERP at {_url()}. Check the ERP link (VENDOR_API_URL)."}
     except Exception as ex:
         logger.exception("Vendor sync failed")
         update = {"status": "failed", "error": str(ex)[:300]}

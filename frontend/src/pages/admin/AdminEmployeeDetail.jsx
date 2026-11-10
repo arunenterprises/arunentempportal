@@ -16,6 +16,8 @@ import EmployeeFormDialog from "@/components/EmployeeFormDialog";
 import ServiceTimeline from "@/components/ServiceTimeline";
 import SalaryBreakup from "@/components/SalaryBreakup";
 import { api, errMsg, fmtDate, fmtINR, localDate } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import { can } from "@/lib/roles";
 
 const TYPES = ["promotion", "transfer", "increment", "appraisal", "training", "award", "joining", "other"];
 
@@ -44,6 +46,8 @@ export const AddRecord = ({ userId, onAdded, onCancel }) => {
   );
 };
 
+const TAB_MODULE = { service: "service_book", appraisals: "service_book", attendance: "attendance", requests: "requests", payslips: "payslips" };
+
 export default function AdminEmployeeDetail() {
   const { id } = useParams();
   return <EmployeeRecord id={id} />;
@@ -52,6 +56,8 @@ export default function AdminEmployeeDetail() {
 const TABS = [["profile", "Profile"], ["salary", "Salary & Leave"], ["service", "Service Book"], ["appraisals", "Appraisals"], ["attendance", "Attendance"], ["requests", "Requests"], ["payslips", "Payslips"]];
 
 export function EmployeeRecord({ id, embedded }) {
+  const { user } = useAuth();
+  const canEdit = can(user, "employees", "edit");
   const navigate = useNavigate();
   const [e, setE] = useState(null);
   const [records, setRecords] = useState([]);
@@ -122,7 +128,7 @@ export function EmployeeRecord({ id, embedded }) {
             </div>
           </div>
         </div>
-        <div className="px-6 sm:px-8 py-4 border-t border-white/10 grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 [&>*]:justify-center sm:[&>*]:justify-start" data-testid="hero-actions">
+        {canEdit && <div className="px-6 sm:px-8 py-4 border-t border-white/10 grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 [&>*]:justify-center sm:[&>*]:justify-start" data-testid="hero-actions">
           <span className="rounded-md bg-white/10 px-3 h-9 inline-flex items-center gap-2 text-sm" data-testid="portal-access-control">Portal {live ? "Live" : "Unlive"} <AccessSwitch employee={e} onChange={setE} /></span>
           <Button size="sm" variant="secondary" onClick={() => setEdit(true)} data-testid="edit-employee-btn"><Pencil size={14} className="mr-2" />Edit details</Button>
           <ShortCodeControl employee={e} onChange={setE} />
@@ -130,7 +136,7 @@ export function EmployeeRecord({ id, embedded }) {
           <Button size="sm" variant="secondary" onClick={() => setSlipConfirm(true)} data-testid="print-slip-btn"><Printer size={14} className="mr-2" />Print slip</Button>
           {!embedded && <Button size="sm" variant="secondary" asChild data-testid="open-service-book-btn"><Link to={`/admin/service-book?id=${e.id}`}><BookOpen size={14} className="mr-2" />Service book</Link></Button>}
           <Button size="sm" variant="secondary" onClick={() => setDel(true)} className="text-rose-600 hover:text-rose-700 sm:ml-auto" data-testid="delete-employee-btn"><Trash2 size={14} className="mr-2" />Delete</Button>
-        </div>
+        </div>}
         <div className="grid grid-cols-2 lg:grid-cols-4 border-t border-white/10">
           {facts.map(([l, v], i) => (
             <div key={l} className={`px-6 sm:px-8 py-4 ${i % 2 ? "border-l" : ""} ${i >= 2 ? "border-t lg:border-t-0" : ""} lg:border-l first:border-l-0 border-white/10`}>
@@ -142,7 +148,7 @@ export function EmployeeRecord({ id, embedded }) {
       </section>
 
       <div className="flex gap-1 overflow-x-auto rounded-xl border bg-white p-1" role="tablist" data-testid="record-tabs">
-        {TABS.map(([k, l]) => (
+        {TABS.filter(([k]) => can(user, TAB_MODULE[k] || "employees")).map(([k, l]) => (
           <button key={k} role="tab" onClick={() => setTab(k)} data-testid={`record-tab-${k}`}
             className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${tab === k ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}>{l}</button>
         ))}
@@ -159,7 +165,7 @@ export function EmployeeRecord({ id, embedded }) {
       {tab === "salary" && (
         <div className="space-y-6">
           <Panel data-testid="salary-panel"><h3 className="font-display text-lg font-semibold mb-4">Salary breakup</h3><SalaryBreakup e={e} wide /></Panel>
-          <Panel data-testid="leave-balance-panel"><h3 className="font-display text-lg font-semibold mb-4">Leave balance</h3><LeaveBalanceAdmin userId={e.id} /></Panel>
+          {can(user, "leave") && <Panel data-testid="leave-balance-panel"><h3 className="font-display text-lg font-semibold mb-4">Leave balance</h3><LeaveBalanceAdmin userId={e.id} /></Panel>}
         </div>
       )}
       {tab === "service" && (
